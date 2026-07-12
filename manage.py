@@ -13,8 +13,14 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
+# Automatically re-execute inside virtual environment if available
+project_root = Path(__file__).resolve().parent
+venv_python = project_root / ".venv" / "bin" / "python"
+if venv_python.exists() and sys.executable != str(venv_python):
+    os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+
 # Adjust path to find the jobhunter package
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(project_root))
 
 from jobhunter.config import get_config, get_project_root, Config
 from jobhunter.database import DatabaseManager

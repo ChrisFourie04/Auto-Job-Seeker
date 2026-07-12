@@ -1,3 +1,5 @@
+"""Scores and filters jobs based on keyword relevance matching and location criteria."""
+
 import logging
 
 from jobhunter.sources.base import Job
@@ -5,7 +7,11 @@ from jobhunter.config import Config
 
 
 class JobMatcher:
-    """Scores and filters jobs based on keyword relevance matching."""
+    """Scores and filters jobs based on keyword relevance matching.
+
+    Applies hard location filters to exclude overseas in-person jobs,
+    and discards senior/lead roles entirely.
+    """
 
     def __init__(self, config: Config):
         self.config = config
@@ -18,7 +24,35 @@ class JobMatcher:
 
         title_lower = job.title.lower() if job.title else ""
         description_lower = job.description.lower() if job.description else ""
+        location_lower = job.location.lower() if job.location else ""
 
+        # ─── 1. Hard Seniority Exclusion ───
+        for keyword in self.config.KEYWORDS_NEGATIVE:
+            if keyword.lower() in title_lower:
+                return (0, [f"Excluded: Seniority ({keyword})"])
+
+        # ─── 2. Hard Location Filtering ───
+        # Check if the job is explicitly remote
+        is_remote = (
+            "remote" in location_lower or
+            "anywhere" in location_lower or
+            "worldwide" in location_lower or
+            "remote" in title_lower
+        )
+
+        # Check if it is a local South Africa / Western Cape job
+        local_keywords = [
+            "south africa", "za", "cape town", "stellenbosch",
+            "western cape", "paarl", "somerset west", "bellville",
+            "durbanville", "camps bay", "stellenbosch university"
+        ]
+        is_local = any(lk in location_lower for lk in local_keywords)
+
+        # If location is specified and it is neither remote nor local SA, exclude it completely!
+        if location_lower and not (is_remote or is_local):
+            return (0, ["Excluded: Overseas in-person position"])
+
+        # ─── 3. Scoring Engine ───
         # Primary role keywords in title (+30)
         for keyword in self.config.KEYWORDS_PRIMARY:
             if keyword.lower() in title_lower:
@@ -45,7 +79,6 @@ class JobMatcher:
         score += skills_score
 
         # Location matching (+15)
-        location_lower = job.location.lower() if job.location else ""
         location_matched = False
         for location in self.config.LOCATIONS_POSITIVE:
             if location.lower() in location_lower:
@@ -68,13 +101,6 @@ class JobMatcher:
                     tags_score += 5
                     reasons.append(f"Tag: {tag}")
         score += tags_score
-
-        # Negative keywords (-50)
-        for keyword in self.config.KEYWORDS_NEGATIVE:
-            if keyword.lower() in title_lower:
-                score -= 50
-                reasons.append(f"Negative: {keyword}")
-                break
 
         # Clamp to 0-100
         score = max(0, min(100, score))

@@ -104,7 +104,7 @@ class Config:
     LOCATIONS_NEGATIVE: list[str] = field(default_factory=list)
 
     # ── Tunables (loaded from environment) ────────────────────────────
-    MIN_RELEVANCE_SCORE: int = 30
+    MIN_RELEVANCE_SCORE: int = 20
     DISCORD_WEBHOOK_URL: str = ""
     LOG_LEVEL: str = "INFO"
 
