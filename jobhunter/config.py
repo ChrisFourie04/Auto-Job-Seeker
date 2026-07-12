@@ -1,10 +1,11 @@
 """Central configuration module for JobHunter.
 
-Loads settings from environment variables (via .env) and provides
-a Config dataclass with all keywords, paths, and tunables.
+Loads settings from environment variables (via .env) and custom keywords from
+data/config.json if available.
 """
 
 import os
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -114,11 +115,36 @@ class Config:
     # ── HTTP ──────────────────────────────────────────────────────────
     USER_AGENT: str = "JobHunter/1.0 (autonomous job scraper)"
 
+    def load_custom_config(self) -> None:
+        """Load overrides from data/config.json if they exist."""
+        custom_path = get_project_root() / "data" / "config.json"
+        if custom_path.exists():
+            try:
+                with open(custom_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                # Load keywords if present
+                if "keywords_primary" in data:
+                    self.KEYWORDS_PRIMARY = data["keywords_primary"]
+                if "keywords_skills" in data:
+                    self.KEYWORDS_SKILLS = data["keywords_skills"]
+                if "keywords_level" in data:
+                    self.KEYWORDS_LEVEL = data["keywords_level"]
+                if "keywords_negative" in data:
+                    self.KEYWORDS_NEGATIVE = data["keywords_negative"]
+                if "locations_positive" in data:
+                    self.LOCATIONS_POSITIVE = data["locations_positive"]
+            except Exception:
+                # Fail silently or fall back to defaults
+                pass
+
 
 def get_config() -> Config:
-    """Create a Config instance populated from environment variables."""
-    return Config(
+    """Create a Config instance populated from environment variables and JSON."""
+    cfg = Config(
         MIN_RELEVANCE_SCORE=int(os.getenv("MIN_RELEVANCE_SCORE", "30")),
         DISCORD_WEBHOOK_URL=os.getenv("DISCORD_WEBHOOK_URL", ""),
         LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
     )
+    cfg.load_custom_config()
+    return cfg

@@ -74,6 +74,39 @@ crontab -l
 
 ---
 
+## 🛠️ Admin Control Panel & CLI
+
+We created [manage.py](file:///home/christhebot/antigravity/fearless-brahmagupta/manage.py) in the root of the project to serve as your admin dashboard. You can run it either as an interactive, menu-driven control panel (if launched without arguments) or as a direct CLI command utility.
+
+### Interactive Menu
+```bash
+./manage.py
+```
+This launches a text-based menu to check status, edit tuning parameters (relevance threshold, Discord webhook), manage keywords (add/remove search words or exclusions), view logs, and trigger manual scans.
+
+### Direct CLI Commands
+```bash
+# Check status and database stats
+./manage.py status
+
+# Run a scan right now manually
+./manage.py run
+
+# Show last 50 lines of scraper logs
+./manage.py logs
+
+# Show last 50 lines of systemd scheduler execution logs
+./manage.py logs --systemd
+
+# Print current keyword configuration (in JSON)
+./manage.py keywords
+
+# Show key environment settings
+./manage.py config
+```
+
+---
+
 ## 🧠 Smart Scoring Engine
 
 The scoring system (`jobhunter/matcher.py`) dynamically scores job listings from 0 to 100 based on your profile config:
