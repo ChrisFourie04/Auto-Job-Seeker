@@ -64,26 +64,22 @@ def show_status() -> None:
     print(f"   • Database File:       {config.DB_PATH}")
     print(f"   • Logs File:           {config.LOG_PATH}")
 
-    # 3. Systemd timer check
-    print(f"\n⏱️  {BOLD}Scheduler Status (systemd user timer):{NC}")
+    # 3. Background daemon check
+    print(f"\n⏱️  {BOLD}Scheduler Status (Terminal Background Daemon):{NC}")
     try:
         res = subprocess.run(
-            ["systemctl", "--user", "status", "jobhunter.timer"],
+            ["pgrep", "-u", os.environ.get("USER", ""), "-f", "jobhunter.main --loop"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-        if "Active: active" in res.stdout:
-            print(f"   • Timer status: {GREEN}Active & Enabled{NC}")
-            # Find next trigger
-            next_run = "Unknown"
-            for line in res.stdout.split("\n"):
-                if "Trigger:" in line or "Triggers:" in line:
-                    next_run = line.strip()
-            print(f"   • {next_run}")
+        if res.returncode == 0:
+            pid = res.stdout.strip()
+            print(f"   • Daemon status: {GREEN}Running{NC} (PID: {pid})")
+            print(f"   • Scans every {config.SCAN_INTERVAL_HOURS} hours as long as your terminal remains open.")
         else:
-            print(f"   • Timer status: {RED}Inactive / Not running{NC}")
-            print(f"     Run: './setup_auto.sh' to re-register.")
-    except Exception:
-        print(f"   • Timer status: Unknown (systemd status check failed)")
+            print(f"   • Daemon status: {RED}Not Running{NC}")
+            print(f"     It will start automatically the next time you open a terminal.")
+    except Exception as e:
+        print(f"   • Daemon status: Unknown ({e})")
 
 
 def get_custom_keywords_path() -> Path:

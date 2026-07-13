@@ -107,6 +107,7 @@ class Config:
     MIN_RELEVANCE_SCORE: int = 20
     DISCORD_WEBHOOK_URL: str = ""
     LOG_LEVEL: str = "INFO"
+    SCAN_INTERVAL_HOURS: float = 2.0
 
     # ── Paths ─────────────────────────────────────────────────────────
     DB_PATH: Path = field(default_factory=lambda: get_project_root() / "data" / "jobs.db")
@@ -145,6 +146,7 @@ def get_config() -> Config:
         MIN_RELEVANCE_SCORE=int(os.getenv("MIN_RELEVANCE_SCORE", "30")),
         DISCORD_WEBHOOK_URL=os.getenv("DISCORD_WEBHOOK_URL", ""),
         LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
+        SCAN_INTERVAL_HOURS=float(os.getenv("SCAN_INTERVAL_HOURS", "2.0")),
     )
     cfg.load_custom_config()
     return cfg

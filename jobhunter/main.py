@@ -142,28 +142,97 @@ def run_scan() -> None:
     print(f"   💾 Database: {stats['total']} total jobs tracked, {stats['today']} seen today")
 
 
+def get_current_user() -> str:
+    """Safely get current username."""
+    import os
+    import getpass
+    try:
+        return os.environ.get("USER") or os.environ.get("LOGNAME") or getpass.getuser()
+    except Exception:
+        import subprocess
+        try:
+            return subprocess.check_output(["whoami"], text=True).strip()
+        except Exception:
+            return "christhebot"
+
+
+def run_loop() -> None:
+    """Run the scan in a loop as long as the user's terminal is active."""
+    import os
+    import subprocess
+    
+    config = get_config()
+    setup_logging(log_level=config.LOG_LEVEL, log_path=config.LOG_PATH)
+    logger.info("JobHunter loop daemon started.")
+    
+    # Run a scan immediately on startup
+    first_run = True
+    
+    # Calculate interval in seconds
+    interval_seconds = int(config.SCAN_INTERVAL_HOURS * 3600)
+    if interval_seconds <= 0:
+        interval_seconds = 7200  # Default to 2 hours
+        
+    while True:
+        if not first_run:
+            # Check if any interactive terminal session (bash or zsh) is open for the current user
+            username = get_current_user()
+            try:
+                res = subprocess.run(
+                    ["pgrep", "-u", username, "-f", "(-bash|bash|-zsh|zsh)"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+                if res.returncode != 0:
+                    logger.info("No active terminal sessions found. JobHunter loop daemon exiting.")
+                    break
+            except Exception as e:
+                logger.warning("Error checking active terminal sessions: %s. Continuing loop.", e)
+        
+        first_run = False
+        
+        logger.info("Starting scheduled loop scan (interval: %.1f hours)...", config.SCAN_INTERVAL_HOURS)
+        try:
+            run_scan()
+        except Exception as e:
+            logger.exception("Error during scheduled loop scan")
+            
+        logger.info("Loop scan finished. Sleeping for %d seconds...", interval_seconds)
+        time.sleep(interval_seconds)
+
+
 def main() -> None:
     """Entry point with error handling."""
-    try:
-        run_scan()
-    except KeyboardInterrupt:
-        print("\n\n⛔ Scan interrupted by user.")
-        sys.exit(0)
-    except Exception as e:
-        logger.exception("Fatal error during scan")
-        print(f"\n❌ Fatal error: {e}")
-        print("   Check logs/jobhunter.log for details.")
-
-        # Try to send error notification
+    if "--loop" in sys.argv:
         try:
-            config = get_config()
-            if config.DISCORD_WEBHOOK_URL:
-                notifier = DiscordNotifier(config.DISCORD_WEBHOOK_URL)
-                notifier.send_error(f"Fatal error: {e}")
-        except Exception:
-            pass
+            run_loop()
+        except KeyboardInterrupt:
+            print("\n\n⛔ Loop daemon interrupted by user.")
+            sys.exit(0)
+        except Exception as e:
+            logger.exception("Fatal error during loop run")
+            sys.exit(1)
+    else:
+        try:
+            run_scan()
+        except KeyboardInterrupt:
+            print("\n\n⛔ Scan interrupted by user.")
+            sys.exit(0)
+        except Exception as e:
+            logger.exception("Fatal error during scan")
+            print(f"\n❌ Fatal error: {e}")
+            print("   Check logs/jobhunter.log for details.")
 
-        sys.exit(1)
+            # Try to send error notification
+            try:
+                config = get_config()
+                if config.DISCORD_WEBHOOK_URL:
+                    notifier = DiscordNotifier(config.DISCORD_WEBHOOK_URL)
+                    notifier.send_error(f"Fatal error: {e}")
+            except Exception:
+                pass
+
+            sys.exit(1)
+
 
 
 if __name__ == "__main__":
