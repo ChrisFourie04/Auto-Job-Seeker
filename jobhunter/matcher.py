@@ -9,8 +9,11 @@ from jobhunter.config import Config
 class JobMatcher:
     """Scores and filters jobs based on keyword relevance matching.
 
-    Applies hard location filters to exclude overseas in-person jobs,
-    and discards senior/lead roles entirely.
+    Applies hard filters:
+    - All remote jobs must be for AI specialists, junior developers, or graduate programs.
+    - All in-person jobs must be based in South Africa.
+    - Discards non-technical/non-computing listings.
+    - Discards senior/lead roles entirely.
     """
 
     def __init__(self, config: Config):
@@ -31,7 +34,20 @@ class JobMatcher:
             if keyword.lower() in title_lower:
                 return (0, [f"Excluded: Seniority ({keyword})"])
 
-        # ─── 2. Hard Location Filtering ───
+        # ─── 2. Hard Non-Technical Exclusion ───
+        # Ensure we only match technical/computing roles to filter out unrelated internships (like HR/Finance)
+        has_primary = any(kw.lower() in title_lower for kw in self.config.KEYWORDS_PRIMARY)
+        
+        tech_prefixes = [
+            "dev", "engineer", "programm", "code", "analyst", "software", "tech",
+            "comput", "system", "database", "qa", "test", "network", "cyber", "data", "ai", "ml"
+        ]
+        has_tech_term = any(tp in title_lower for tp in tech_prefixes)
+        
+        if not (has_primary or has_tech_term):
+            return (0, ["Excluded: Non-technical position"])
+
+        # ─── 3. Location & Remote Hard Filters ───
         # Check if the job is explicitly remote
         is_remote = (
             "remote" in location_lower or
@@ -44,15 +60,30 @@ class JobMatcher:
         local_keywords = [
             "south africa", "za", "cape town", "stellenbosch",
             "western cape", "paarl", "somerset west", "bellville",
-            "durbanville", "camps bay", "stellenbosch university"
+            "durbanville", "camps bay", "stellenbosch university",
+            "johannesburg", "pretoria", "gauteng", "durban", "sandton"
         ]
         is_local = any(lk in location_lower for lk in local_keywords)
 
-        # If location is specified and it is neither remote nor local SA, exclude it completely!
-        if location_lower and not (is_remote or is_local):
-            return (0, ["Excluded: Overseas in-person position"])
+        if is_remote:
+            # Remote jobs must be for:
+            # - AI specialists (title or description contains AI keywords)
+            # - Junior developers / Graduate programs (title contains experience level keywords)
+            ai_keywords = [
+                "ai", "machine learning", "ml", "deep learning", "nlp",
+                "llm", "prompt", "data science", "data scientist", "artificial intelligence"
+            ]
+            has_ai = any(ak in title_lower or ak in description_lower for ak in ai_keywords)
+            has_level = any(lk in title_lower for lk in self.config.KEYWORDS_LEVEL)
 
-        # ─── 3. Scoring Engine ───
+            if not (has_ai or has_level):
+                return (0, ["Excluded: Remote job is not AI or Entry-Level"])
+        else:
+            # In-person jobs must be based in South Africa
+            if not is_local:
+                return (0, ["Excluded: In-person job outside South Africa"])
+
+        # ─── 4. Scoring Engine ───
         # Primary role keywords in title (+30)
         for keyword in self.config.KEYWORDS_PRIMARY:
             if keyword.lower() in title_lower:
