@@ -263,6 +263,45 @@ def view_logs(tail_count: int = 50, show_systemd: bool = False) -> None:
         print(f"{RED}Error reading logs: {e}{NC}")
 
 
+def send_test_notification() -> None:
+    """Send a dummy job match notification to verify the Discord webhook is working."""
+    print_header("Sending Test Discord Notification")
+    config = get_config()
+    if not config.DISCORD_WEBHOOK_URL:
+        print(f"{RED}Error: Discord Webhook URL is not configured. Choose option 2 to configure it.{NC}")
+        return
+        
+    try:
+        from jobhunter.notifier import DiscordNotifier
+        from jobhunter.sources.base import Job
+        
+        notifier = DiscordNotifier(config.DISCORD_WEBHOOK_URL)
+        test_job = Job(
+            id="test-12345",
+            title="Junior Software Engineer (Test Match)",
+            company="JobHunter Automation",
+            location="Stellenbosch, Western Cape (Remote)",
+            url="https://github.com/ChrisFourie04/Auto-Job-Seeker",
+            description="This is a test notification confirming that the Discord Webhook is fully functional and manual/scheduled runs can send messages successfully.",
+            salary="R50,000 - R60,000 a month",
+            tags=["python", "automation", "ai", "discord"],
+            source="System Test"
+        )
+        
+        success = notifier.send_job(
+            job=test_job,
+            score=95,
+            reasons=["Role: software engineer", "Level: junior", "Location: stellenbosch", "Skill: python"]
+        )
+        
+        if success:
+            print(f"{GREEN}✓ Test notification successfully sent to Discord! Check your channel.{NC}")
+        else:
+            print(f"{RED}✗ Failed to send Discord notification. Check logs/jobhunter.log for details.{NC}")
+    except Exception as e:
+        print(f"{RED}Error sending notification: {e}{NC}")
+
+
 def interactive_menu() -> None:
     """Run the main interactive menu loop."""
     while True:
@@ -275,10 +314,11 @@ def interactive_menu() -> None:
         print("   4) Run Scan Now (Manual run)")
         print("   5) View Scraper Logs")
         print("   6) View Systemd Daemon execution logs")
-        print("   7) Exit")
+        print("   7) Send Test Discord Notification")
+        print("   8) Exit")
 
-        choice = input(f"\nSelect option [1-7]: ").strip()
-        if choice == "7":
+        choice = input(f"\nSelect option [1-8]: ").strip()
+        if choice == "8":
             print(f"{GREEN}Goodbye! Keep hunting.{NC}")
             sys.exit(0)
         
@@ -294,6 +334,8 @@ def interactive_menu() -> None:
             view_logs()
         elif choice == "6":
             view_logs(show_systemd=True)
+        elif choice == "7":
+            send_test_notification()
         else:
             print(f"{RED}Invalid selection!{NC}")
         
@@ -322,6 +364,8 @@ def main() -> None:
             show_status()
         elif cmd == "run":
             run_scan_now()
+        elif cmd == "test" or cmd == "test-webhook":
+            send_test_notification()
         elif cmd == "logs":
             view_logs(args.tail, args.systemd)
         elif cmd == "keywords":
@@ -335,7 +379,7 @@ def main() -> None:
             print(f"LOG_LEVEL: {cfg.LOG_LEVEL}")
             print(f"DISCORD_WEBHOOK_URL: {cfg.DISCORD_WEBHOOK_URL}")
         else:
-            print(f"Unknown command '{cmd}'. Available: status, run, logs, keywords, config")
+            print(f"Unknown command '{cmd}'. Available: status, run, test-webhook, logs, keywords, config")
 
 
 if __name__ == "__main__":
