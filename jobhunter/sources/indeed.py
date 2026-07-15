@@ -1,16 +1,18 @@
-"""Job source fetcher for Indeed South Africa (za.indeed.com) RSS feeds."""
+"""Job source fetcher for Indeed South Africa (za.indeed.com) scraping HTML pages."""
 
-import urllib.parse
+import re
 import hashlib
-import feedparser
+from curl_cffi import requests
+from bs4 import BeautifulSoup
+
 from jobhunter.sources.base import Job, JobSource
 from jobhunter.utils import clean_html
 
 
 class IndeedSource(JobSource):
-    """Fetches job listings from Indeed za RSS feeds.
+    """Fetches job listings from Indeed za search pages.
 
-    Bypasses Cloudflare restrictions by pulling XML feeds rather than full page HTML.
+    Bypasses Cloudflare restrictions by impersonating a Safari browser using curl_cffi.
     """
 
     @property
@@ -18,65 +20,87 @@ class IndeedSource(JobSource):
         return 'Indeed'
 
     def fetch_jobs(self) -> list[Job]:
-        """Fetch software/tech jobs from Indeed South Africa RSS feeds."""
-        # Loosen filters a bit by checking multiple broad search terms
-        search_terms = ['software developer', 'intern software', 'graduate developer']
+        """Fetch software/tech jobs from Indeed South Africa search pages."""
+        # Loosen filters by querying multiple broad search terms
+        search_terms = ['software developer', 'software engineer', 'intern software', 'graduate developer']
         jobs: list[Job] = []
 
         for term in search_terms:
-            # URL-encode the search query to prevent control character errors
-            term_encoded = urllib.parse.quote(term)
-            url = f'https://za.indeed.com/rss?q={term_encoded}&l=South+Africa'
+            # We query the indeed SA search endpoint
+            query = term.replace(' ', '+')
+            url = f'https://za.indeed.com/jobs?q={query}&l=South+Africa&sort=date'
             try:
-                feed = feedparser.parse(url)
+                # Use curl_cffi to impersonate Safari 15.5 TLS handshakes (unblocked by Indeed's Cloudflare config)
+                response = requests.get(url, impersonate='safari15_5', timeout=15)
                 
-                # Check for errors in parsing
-                if feed.bozo:
+                if response.status_code != 200:
                     self.logger.warning(
-                        f"Indeed RSS feed parser warning for '{term}': {feed.bozo_exception}"
+                        f"Failed to fetch Indeed search for '{term}': HTTP {response.status_code}"
                     )
+                    continue
 
-                for entry in feed.entries:
-                    title = entry.get('title', '')
-                    company = 'Unknown'
-                    location = 'South Africa'
+                soup = BeautifulSoup(response.text, 'html.parser')
+                cards = soup.find_all(class_=re.compile('job_seen_beacon'))
 
-                    # Indeed RSS titles format: "Job Title - Company - Location"
-                    parts = title.split(' - ')
-                    if len(parts) >= 3:
-                        title = parts[0]
-                        company = parts[1]
-                        location = parts[2]
-                    elif len(parts) == 2:
-                        title = parts[0]
-                        company = parts[1]
+                for card in cards:
+                    # Find parent item containing metadata and snippet
+                    parent = card.find_parent('li') or card.find_parent(class_=re.compile('result|cardOutline'))
 
-                    job_url = entry.get('link', '')
-                    if not job_url:
+                    # Title
+                    title_elem = card.find(class_='jobTitle')
+                    if not title_elem:
+                        continue
+                    
+                    title = title_elem.get_text(strip=True)
+                    # Extract cleaner title if there's a child span
+                    if title_elem.find('a') and title_elem.find('a').find('span'):
+                        title = title_elem.find('a').find('span').get_text(strip=True)
+
+                    # Extract job key (data-jk)
+                    link_elem = title_elem.find('a')
+                    jk = None
+                    if link_elem and link_elem.has_attr('data-jk'):
+                        jk = link_elem['data-jk']
+                    
+                    if not jk:
                         continue
 
-                    job_id = hashlib.md5(job_url.encode()).hexdigest()
-                    desc = clean_html(entry.get('summary', ''))
+                    # Direct job URL
+                    job_url = f'https://za.indeed.com/viewjob?jk={jk}'
 
-                    # Extract salary if available
-                    salary = ''
-                    if 'salary' in entry:
-                        salary = entry.get('salary', '')
+                    # Company Name
+                    comp_elem = card.find(attrs={'data-testid': 'company-name'})
+                    company = comp_elem.get_text(strip=True) if comp_elem else 'Unknown'
+
+                    # Location
+                    loc_elem = card.find(attrs={'data-testid': 'text-location'})
+                    location = loc_elem.get_text(strip=True) if loc_elem else 'South Africa'
+
+                    # Description snippet
+                    desc = ''
+                    if parent:
+                        desc_elem = parent.find(class_=re.compile('slider_sub_item|job-snippet|underCard'))
+                        if desc_elem:
+                            desc = desc_elem.get_text(separator=' ', strip=True)
+
+                    # Salary
+                    sal_elem = card.find(class_=re.compile('salary-snippet-container|metadataContainer'))
+                    salary = sal_elem.get_text(strip=True) if sal_elem else ''
 
                     job = Job(
-                        id=f'indeed-{job_id}',
+                        id=f'indeed-{jk}',
                         title=title,
                         company=company,
                         location=location,
                         url=job_url,
-                        description=desc,
+                        description=clean_html(desc),
                         salary=salary,
-                        posted_date=entry.get('published', ''),
+                        posted_date='', # dates on search pages can be dynamic, matcher works fine without it
                         source=self.source_name,
                     )
                     jobs.append(job)
             except Exception as e:
-                self.logger.warning(f"Error fetching Indeed RSS for term '{term}': {e}")
+                self.logger.warning(f"Error fetching Indeed page for term '{term}': {e}")
 
         self.logger.info(f'Fetched {len(jobs)} jobs from Indeed')
         return jobs
